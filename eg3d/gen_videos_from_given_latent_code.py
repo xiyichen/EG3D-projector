@@ -22,6 +22,7 @@ import scipy.interpolate
 import torch
 from tqdm import tqdm
 import mrcfile
+import cv2, json
 
 import legacy
 
@@ -75,6 +76,15 @@ def create_samples(N=256, voxel_origin=[0, 0, 0], cube_length=2.0):
 
 # ----------------------------------------------------------------------------
 
+def flip_yaw(pose_matrix):
+    flipped = pose_matrix.clone()
+    flipped[0, 1] *= -1
+    flipped[0, 2] *= -1
+    flipped[1, 0] *= -1
+    flipped[2, 0] *= -1
+    flipped[0, 3] *= -1
+    return flipped
+
 def gen_interp_video(G, latent, mp4: str,  w_frames=60 * 4, kind='cubic', grid_dims=(1, 1),
                      num_keyframes=None, wraps=2, psi=1, truncation_cutoff=14, cfg='FFHQ', image_mode='image',
                      gen_shapes=False, device=torch.device('cuda'), **video_kwargs):
@@ -90,7 +100,7 @@ def gen_interp_video(G, latent, mp4: str,  w_frames=60 * 4, kind='cubic', grid_d
                                                                                                       device=device)
 
     # zs = torch.from_numpy(np.stack([np.random.RandomState(seed).randn(G.z_dim) for seed in all_seeds])).to(device)
-    cam2world_pose = LookAtPoseSampler.sample(3.14 / 2, 3.14 / 2, camera_lookat_point, radius=2.7, device=device)
+    cam2world_pose = LookAtPoseSampler.sample(3.14/2, 3.14/2, camera_lookat_point, radius=2.7, device=device)
     intrinsics = torch.tensor([[4.2647, 0, 0.5], [0, 4.2647, 0.5], [0, 0, 1]], device=device)
     c = torch.cat([cam2world_pose.reshape(-1, 16), intrinsics.reshape(-1, 9)], 1)
     c = c.repeat(latent.shape[0], 1)
@@ -121,18 +131,28 @@ def gen_interp_video(G, latent, mp4: str,  w_frames=60 * 4, kind='cubic', grid_d
         outdir = 'interpolation_{}/'.format(name)
         os.makedirs(outdir, exist_ok=True)
     all_poses = []
+    
+    d = {}
+    d['w'] = 512
+    d['h'] = 512
+    d['aabb_scale'] = 1.0
+    d['scale'] = 1.0
+    d['offset'] = [0.5,0.5,0.5]
+    d['frames'] = []
+    count = 0
+    
     for frame_idx in tqdm(range(num_keyframes * w_frames)):
         imgs = []
         for yi in range(grid_h):
             for xi in range(grid_w):
                 pitch_range = 0.25
-                yaw_range = 0.35
+                yaw_range = 3.14/4
                 cam2world_pose = LookAtPoseSampler.sample(
-                    3.14 / 2 + yaw_range * np.sin(2 * 3.14 * frame_idx / (num_keyframes * w_frames)),
-                    3.14 / 2 - 0.05 + pitch_range * np.cos(2 * 3.14 * frame_idx / (num_keyframes * w_frames)),
+                    3.14/2 + yaw_range * np.sin(2 * 3.14 * frame_idx / (num_keyframes * w_frames)),
+                    3.14/2 - 0.05 + pitch_range * np.cos(2 * 3.14 * frame_idx / (num_keyframes * w_frames)),
                     camera_lookat_point, radius=2.7, device=device)
                 all_poses.append(cam2world_pose.squeeze().cpu().numpy())
-                intrinsics = torch.tensor([[4.2647, 0, 0.5], [0, 4.2647, 0.5], [0, 0, 1]], device=device)
+                intrinsics = torch.tensor([[4.2647/1.35, 0, 0.5], [0, 4.2647/1.35, 0.5], [0, 0, 1]], device=device)
                 c = torch.cat([cam2world_pose.reshape(-1, 16), intrinsics.reshape(-1, 9)], 1)
 
                 interp = grid[yi][xi]
@@ -143,8 +163,27 @@ def gen_interp_video(G, latent, mp4: str,  w_frames=60 * 4, kind='cubic', grid_d
                 if image_mode == 'image_depth':
                     img = -img
                     img = (img - img.min()) / (img.max() - img.min()) * 2 - 1
-
+                
                 imgs.append(img)
+                if frame_idx%8==0:
+                    count += 1
+                    d_curr = {}
+                    d_curr['file_path'] = f"images/{str(frame_idx//8).zfill(2)}.png"
+                    E = c[0][:16].reshape(4,4)
+                    
+                    rot = torch.tensor([[1,0,0],[0,-1,0],[0,0,-1]]).float().to(E.device)
+                    E[:3,:3] = (rot@(E[:3,:3].T)).T
+                    
+                    rot2 = torch.tensor([[1,0,0],[0,0,-1],[0,1,0]]).float().to(E.device)
+                    E[:3,:4] = rot2@E[:3,:4]
+                    
+                    
+                    d_curr['transform_matrix'] = E.detach().cpu().numpy().tolist()
+                    d_curr['intrinsic_matrix'] = [[4.2647/1.35*700, 0, 256], [0, 4.2647/1.35*700, 256], [0,0,1]]
+                    d['frames'].append(d_curr)
+                    img_255 = layout_grid(torch.stack(imgs))[:,:,::-1]
+                    cv2.imwrite(f'./out/{frame_idx}.png', img_255)
+                    np.save(f'./out/{frame_idx}.npy', c[0:1].detach().cpu().numpy())
 
                 if gen_shapes:
                     # generate shapes
@@ -190,7 +229,6 @@ def gen_interp_video(G, latent, mp4: str,  w_frames=60 * 4, kind='cubic', grid_d
                         with mrcfile.new_mmap(outdir + f'{frame_idx:04d}_shape.mrc', overwrite=True, shape=sigmas.shape,
                                               mrc_mode=2) as mrc:
                             mrc.data[:] = sigmas
-
         video_out.append_data(layout_grid(torch.stack(imgs), grid_w=grid_w, grid_h=grid_h))
     video_out.close()
     all_poses = np.stack(all_poses)
@@ -199,6 +237,10 @@ def gen_interp_video(G, latent, mp4: str,  w_frames=60 * 4, kind='cubic', grid_d
         print(all_poses.shape)
         with open(mp4.replace('.mp4', '_trajectory.npy'), 'wb') as f:
             np.save(f, all_poses)
+    
+    
+    with open('./out/transform.json', 'w') as fp:
+        json.dump(d, fp, indent=4)
 
 
 # ----------------------------------------------------------------------------
@@ -241,7 +283,7 @@ def parse_tuple(s: Union[str, Tuple[int, int]]) -> Tuple[int, int]:
               help='Number of seeds to interpolate through.  If not specified, determine based on the length of the seeds array given by --seeds.',
               default=None)
 @click.option('--w-frames', type=int, help='Number of frames to interpolate between latents', default=120)
-@click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
+@click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=0.5, show_default=True)
 @click.option('--trunc-cutoff', 'truncation_cutoff', type=int, help='Truncation cutoff', default=14, show_default=True)
 @click.option('--outdir', help='Output directory', type=str, required=True, metavar='DIR')
 @click.option('--cfg', help='Config', type=click.Choice(['FFHQ', 'Cats']), required=False, metavar='STR',

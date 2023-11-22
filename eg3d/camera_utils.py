@@ -69,7 +69,7 @@ class LookAtPoseSampler:
     def sample(horizontal_mean, vertical_mean, lookat_position, horizontal_stddev=0, vertical_stddev=0, radius=1, batch_size=1, device='cpu'):
         h = torch.randn((batch_size, 1), device=device) * horizontal_stddev + horizontal_mean
         v = torch.randn((batch_size, 1), device=device) * vertical_stddev + vertical_mean
-        v = torch.clamp(v, 1e-5, math.pi - 1e-5)
+        # v = torch.clamp(v, 1e-5, math.pi - 1e-5)
 
         theta = h
         v = v / math.pi

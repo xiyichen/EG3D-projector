@@ -1,8 +1,8 @@
 ## Pretrained models paths
 e4e = './pretrained_models/e4e_ffhq_encode.pt'
 stylegan2_ada_ffhq = '../pretrained_models/ffhq.pkl'
-eg3d_ffhq_pkl = '../../networks/ffhq512-128.pkl'
-eg3d_ffhq_pth = '../../networks/ffhq512-128.pth'
+eg3d_ffhq_pkl = '../../networks/ffhqrebalanced512-128.pkl'
+eg3d_ffhq_pth = '../../networks/ffhqrebalanced512-128.pth'
 style_clip_pretrained_mappers = ''
 ir_se50 = './pretrained_models/model_ir_se50.pth'
 dlib = './pretrained_models/align.dat'

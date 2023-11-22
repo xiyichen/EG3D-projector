@@ -1,0 +1,1 @@
+python run_projector.py --outdir=projector_out --latent_space_type w_plus  --network=networks/ffhqrebalanced512-128.pkl --sample_mult=2  --image_path ./projector_test_data/122.png --c_path ./projector_test_data/122.npy 

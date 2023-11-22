@@ -69,7 +69,7 @@ def parse_tuple(s: Union[str, Tuple[int, int]]) -> Tuple[int, int]:
 @click.option('--sample_mult', 'sampling_multiplier', type=float,
               help='Multiplier for depth sampling in volume rendering', default=2, show_default=True)
 @click.option('--num_steps', 'num_steps', type=int,
-              help='Multiplier for depth sampling in volume rendering', default=500, show_default=True)
+              help='Multiplier for depth sampling in volume rendering', default=1000, show_default=True)
 @click.option('--nrr', type=int, help='Neural rendering resolution override', default=None, show_default=True)
 def run(
         network_pkl: str,
